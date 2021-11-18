@@ -172,7 +172,7 @@ class Seq2SeqTrainer(Trainer):
             generation_inputs = inputs["input_ids"]
 
         generated_tokens = self.model.generate(
-            **generation_inputs,
+            generation_inputs,
             **gen_kwargs,
         )
         # in case the batch is shorter than max length, the output should be padded
