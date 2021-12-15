@@ -12,8 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Classes to support Encoder-Decoder architectures """
+"""
+Classes to support Encoder-Decoder architectures
+This code is coming from transformers/models/encoder_decoder/modeling_encoder_decoder.py
+https://github.com/huggingface/transformers/blob/master/src/transformers/models/encoder_decoder/modeling_encoder_decoder.py
 
+It is copied for making modifications to the forward of the EncoderDecoderModel
+"""
 import warnings
 from typing import Optional
 
@@ -26,7 +31,6 @@ from ...modeling_outputs import Seq2SeqLMOutput
 from ...modeling_utils import PreTrainedModel
 from ...utils import logging
 from .configuration_encoder_decoder import EncoderDecoderConfig
-
 
 logger = logging.get_logger(__name__)
 
@@ -176,13 +180,14 @@ class EncoderDecoderModel(PreTrainedModel):
     base_model_prefix = "encoder_decoder"
 
     def __init__(
-        self,
-        config: Optional[PretrainedConfig] = None,
-        encoder: Optional[PreTrainedModel] = None,
-        decoder: Optional[PreTrainedModel] = None,
+            self,
+            config: Optional[PretrainedConfig] = None,
+            encoder: Optional[PreTrainedModel] = None,
+            decoder: Optional[PreTrainedModel] = None,
+            split_embedding: Optional[bool] = None,
     ):
         assert config is not None or (
-            encoder is not None and decoder is not None
+                encoder is not None and decoder is not None
         ), "Either a configuration or an Encoder and a decoder has to be provided"
         if config is None:
             config = EncoderDecoderConfig.from_encoder_decoder_configs(encoder.config, decoder.config)
@@ -219,11 +224,18 @@ class EncoderDecoderModel(PreTrainedModel):
         self.decoder.config = self.config.decoder
 
         assert (
-            self.encoder.get_output_embeddings() is None
+                self.encoder.get_output_embeddings() is None
         ), "The encoder {} should not have a LM Head. Please use a model without LM Head"
 
         # tie encoder, decoder weights if config set accordingly
         self.tie_weights()
+
+        # determines whether to split the learned encoder's embedding
+        # (True = do the disentangled trick)
+        if split_embedding is None:
+            self.split_embedding = False
+        else:
+            self.split_embedding = split_embedding  # TODO use this later in forward pass
 
     def tie_weights(self):
         # tie encoder & decoder if needed
@@ -258,11 +270,11 @@ class EncoderDecoderModel(PreTrainedModel):
 
     @classmethod
     def from_encoder_decoder_pretrained(
-        cls,
-        encoder_pretrained_model_name_or_path: str = None,
-        decoder_pretrained_model_name_or_path: str = None,
-        *model_args,
-        **kwargs
+            cls,
+            encoder_pretrained_model_name_or_path: str = None,
+            decoder_pretrained_model_name_or_path: str = None,
+            *model_args,
+            **kwargs
     ) -> PreTrainedModel:
         r"""
         Instantiate an encoder and a decoder from one or two base classes of the library from pretrained model
@@ -325,11 +337,11 @@ class EncoderDecoderModel(PreTrainedModel):
         """
 
         kwargs_encoder = {
-            argument[len("encoder_") :]: value for argument, value in kwargs.items() if argument.startswith("encoder_")
+            argument[len("encoder_"):]: value for argument, value in kwargs.items() if argument.startswith("encoder_")
         }
 
         kwargs_decoder = {
-            argument[len("decoder_") :]: value for argument, value in kwargs.items() if argument.startswith("decoder_")
+            argument[len("decoder_"):]: value for argument, value in kwargs.items() if argument.startswith("decoder_")
         }
 
         # remove encoder, decoder kwargs from kwargs
@@ -344,7 +356,7 @@ class EncoderDecoderModel(PreTrainedModel):
         encoder = kwargs_encoder.pop("model", None)
         if encoder is None:
             assert (
-                encoder_pretrained_model_name_or_path is not None
+                    encoder_pretrained_model_name_or_path is not None
             ), "If `model` is not defined as an argument, a `encoder_pretrained_model_name_or_path` has to be defined"
             from ..auto.modeling_auto import AutoModel
 
@@ -353,7 +365,6 @@ class EncoderDecoderModel(PreTrainedModel):
 
                 encoder_config = AutoConfig.from_pretrained(encoder_pretrained_model_name_or_path)
                 if encoder_config.is_decoder is True or encoder_config.add_cross_attention is True:
-
                     logger.info(
                         f"Initializing {encoder_pretrained_model_name_or_path} as a encoder model from a decoder model. Cross-attention and casual mask are disabled."
                     )
@@ -367,7 +378,7 @@ class EncoderDecoderModel(PreTrainedModel):
         decoder = kwargs_decoder.pop("model", None)
         if decoder is None:
             assert (
-                decoder_pretrained_model_name_or_path is not None
+                    decoder_pretrained_model_name_or_path is not None
             ), "If `decoder_model` is not defined as an argument, a `decoder_pretrained_model_name_or_path` has to be defined"
             from ..auto.modeling_auto import AutoModelForCausalLM
 
@@ -398,21 +409,21 @@ class EncoderDecoderModel(PreTrainedModel):
     @add_start_docstrings_to_model_forward(ENCODER_DECODER_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=Seq2SeqLMOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        decoder_input_ids=None,
-        decoder_attention_mask=None,
-        encoder_outputs=None,
-        past_key_values=None,
-        inputs_embeds=None,
-        decoder_inputs_embeds=None,
-        labels=None,
-        use_cache=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-        **kwargs,
+            self,
+            input_ids=None,
+            attention_mask=None,
+            decoder_input_ids=None,
+            decoder_attention_mask=None,
+            encoder_outputs=None,
+            past_key_values=None,
+            inputs_embeds=None,
+            decoder_inputs_embeds=None,
+            labels=None,
+            use_cache=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+            **kwargs,
     ):
         r"""
         Returns:
@@ -448,7 +459,7 @@ class EncoderDecoderModel(PreTrainedModel):
         kwargs_encoder = {argument: value for argument, value in kwargs.items() if not argument.startswith("decoder_")}
 
         kwargs_decoder = {
-            argument[len("decoder_") :]: value for argument, value in kwargs.items() if argument.startswith("decoder_")
+            argument[len("decoder_"):]: value for argument, value in kwargs.items() if argument.startswith("decoder_")
         }
 
         if encoder_outputs is None:
@@ -514,7 +525,7 @@ class EncoderDecoderModel(PreTrainedModel):
         return shift_tokens_right(labels, self.config.pad_token_id, self.config.decoder_start_token_id)
 
     def prepare_inputs_for_generation(
-        self, input_ids, past=None, attention_mask=None, use_cache=None, encoder_outputs=None, **kwargs
+            self, input_ids, past=None, attention_mask=None, use_cache=None, encoder_outputs=None, **kwargs
     ):
         decoder_inputs = self.decoder.prepare_inputs_for_generation(input_ids, past=past)
         decoder_attention_mask = decoder_inputs["attention_mask"] if "attention_mask" in decoder_inputs else None
